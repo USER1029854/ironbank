@@ -1,0 +1,15 @@
+RESOLVED FACTS (Iron Bank / ex-CREAM, Ethereum mainnet, block ts 2026-08-20 22:39 UTC)
+- Unitroller 0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB -> Comptroller impl 0xcb9ab119...d59f (v0.5.17)
+- admin=0x5b12f04e...ac17 (contract), guardian=0x9d960dae...30aa (contract), creditLimitManager=0x8f3ae32d...77d9 (contract; same code as admin)
+- oracle=0xbd6f5add...1451 PriceOracleProxyIB; reg=0x47fb2585...eedf (canonical Chainlink FeedRegistry), ref=0xda7a...74c3 (Band), v1=0x3abce8f1...5cf7
+- closeFactor=0.5, liqIncentive=1.08, collFactorMax=0.9, flashFeeBips=3 (0.03%)
+- 24 markets. 22 use delegate 0x7e8844ea...2b05 (CCollateralCapErc20Delegate). iWETH+iWSTETH use 0x2ac63723...1702 (SAME name, DIFFERENT bytecode: adds borrowOnEvilSpellBehalf backdoor)
+- ORACLE: single Chainlink feed per asset via FeedRegistry, NO updatedAt/answeredInRound/deviation check (getPriceFromChainlink/getPriceFromBAND only require price>0)
+- iMIM (feed base=MIM/USD) and iDPI (DPI/USD) -> reg.latestRoundData REVERTS "Feed not found" -> getUnderlyingPrice REVERTS (LIVE). Both isListed=1, mint+borrow PAUSED, not soft-delisted.
+- FX synth markets iGBP/iEUR/iAUD/iJPY/iKRW/iCHF: collateralFactor=0 (borrow-only), priced by Chainlink FX feeds (ISO-code base) via FeedRegistry.
+- EURS (STASIS EUR, 2 decimals) priced by EUR/USD feed, collateralFactor=0.60 (used as collateral, no EURS-specific feed / no depeg check)
+- wstETH: special path = stETH/USD * wstETH.stEthPerToken() (correct); NONE-configured aggregator otherwise
+- CREDIT LINES (from 191 CreditLimitChanged events; current nonzero): big lines only in FX markets to 3 Fixed-Forex protocol contracts (0x6b41.., 0x0a0b.., 0x8338..). 0xba5ebaf.. has tiny iYFI/iSUSD lines + limit=1 markers on majors. Majors (iWETH/iDAI/iUSDC/iUSDT/iWBTC) have NO large credit line (only limit=1 markers).
+- SOLVENCY: internalCash == on-chain balanceOf for all markets EXCEPT iSUSD (internalCash=4048 sUSD, on-chain=0; sUSD.totalSupply()=0 -> underlying defunct/migrated -> phantom cash, unextractable). Most majors ~100% utilization (internalCash ~ 0).
+- borrowRatePerBlock at ~6.9% of borrowRateMaxMantissa on maxed markets (no interest-accrual brick).
+- backdoor: impl2.borrowOnEvilSpellBehalf gated msg.sender==IB_MULTISIG 0xA5fC..84Eb; debt->EVIL_SPELL 0x560A..DDad2; funds->multisig; uses borrowFreshUnchecked (skips borrowAllowed). Normal borrowFresh still checks.

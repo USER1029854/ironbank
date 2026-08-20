@@ -1,0 +1,116 @@
+{
+ "now": 1787265599,
+ "feeds": {
+  "ETH/USD": {
+   "answer": 231964000000,
+   "updatedAt": 1787262791,
+   "age_h": 0.78
+  },
+  "DAI/USD": {
+   "answer": 99994521,
+   "updatedAt": 1787263283,
+   "age_h": 0.6433333333333333
+  },
+  "MIM/USD": {
+   "revert": true
+  },
+  "LINK/USD": {
+   "answer": 1060538237,
+   "updatedAt": 1787265287,
+   "age_h": 0.08666666666666667
+  },
+  "YFI/USD": {
+   "answer": 215246000000,
+   "updatedAt": 1787250623,
+   "age_h": 4.16
+  },
+  "SNX/USD": {
+   "answer": 21034000,
+   "updatedAt": 1787249483,
+   "age_h": 4.476666666666667
+  },
+  "WBTC/BTC": {
+   "answer": 100001707,
+   "updatedAt": 1787259815,
+   "age_h": 1.6066666666666667
+  },
+  "BTC/USD": {
+   "answer": 7271473567497,
+   "updatedAt": 1787262515,
+   "age_h": 0.8566666666666667
+  },
+  "USDT/USD": {
+   "answer": 99963505,
+   "updatedAt": 1787254043,
+   "age_h": 3.21
+  },
+  "USDC/USD": {
+   "answer": 99988573,
+   "updatedAt": 1787212847,
+   "age_h": 14.653333333333334
+  },
+  "SUSHI/ETH": {
+   "answer": 78291614639431,
+   "updatedAt": 1787259239,
+   "age_h": 1.7666666666666666
+  },
+  "GBP/USD": {
+   "answer": 136250000,
+   "updatedAt": 1787243603,
+   "age_h": 6.11
+  },
+  "EUR/USD": {
+   "answer": 116750000,
+   "updatedAt": 1787234387,
+   "age_h": 8.67
+  },
+  "AAVE/USD": {
+   "answer": 9759153936,
+   "updatedAt": 1787264051,
+   "age_h": 0.43
+  },
+  "DPI/USD": {
+   "revert": true
+  },
+  "AUD/USD": {
+   "answer": 71090499,
+   "updatedAt": 1787249447,
+   "age_h": 4.486666666666666
+  },
+  "CRV/USD": {
+   "answer": 27579000,
+   "updatedAt": 1787264411,
+   "age_h": 0.33
+  },
+  "JPY/USD": {
+   "answer": 628796,
+   "updatedAt": 1787243207,
+   "age_h": 6.22
+  },
+  "KRW/USD": {
+   "answer": 71857,
+   "updatedAt": 1787264159,
+   "age_h": 0.4
+  },
+  "CVX/USD": {
+   "answer": 161775000,
+   "updatedAt": 1787265107,
+   "age_h": 0.13666666666666666
+  },
+  "CHF/USD": {
+   "answer": 124896960,
+   "updatedAt": 1787243939,
+   "age_h": 6.016666666666667
+  },
+  "UNI/USD": {
+   "answer": 371092885,
+   "updatedAt": 1787265203,
+   "age_h": 0.11
+  },
+  "stETH/USD": {
+   "answer": 231366123227,
+   "updatedAt": 1787265347,
+   "age_h": 0.07
+  }
+ }
+}
