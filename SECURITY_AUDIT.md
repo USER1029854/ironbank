@@ -22,6 +22,8 @@ The material risk is concentrated in **one dependency the whole system leans on:
 
 Severity headline: **1 High** (oracle design; Critical *impact* if a major‑collateral feed degrades, but the trigger is external, not attacker‑controlled, and not live today), **1 Medium** (oracle‑revert → unliquidatable‑position DoS / bad‑debt, live precondition), plus **centralization / divergence** items (unbounded credit‑line power; a multisig‑gated unlimited‑borrow backdoor on the two largest markets) and **1 Low** accounting/solvency note (phantom sUSD cash in a dead market).
 
+**Risk‑control bottom line (unprivileged, verified on a mainnet fork — §12):** from a no‑admin / no‑gated‑role attacker, **at‑will extractable value today is $0 for every finding.** Each is gated behind either an *external trigger* the attacker cannot cause (a Chainlink feed degrading — Findings 1 and the profit‑leg of 2) or a *privileged role* (Findings 3, 4). This lowers immediate urgency, but the structural exposure is real and flips on without warning: **~$30.3M** of collateral is single‑sourced by the oracle and **~$2.3M** of uncollateralized credit debt is outstanding. Highest‑urgency fix is oracle staleness/liveness hardening, because the trigger that turns Findings 1+2 from $0 into large is a *when‑not‑if* external event (feed removal — already true for iMIM/iDPI), requiring zero attacker skill.
+
 ---
 
 ## 1. Premise check (what the target actually is)
@@ -376,3 +378,26 @@ Total collateral valued by the single‑source oracle (from `totalCollateralToke
 
 ### 11.4 Net effect of validation on the verdict
 Nothing was found to *gate* the mechanisms (no try/catch on the oracle revert; the credit path genuinely skips collateral; the manager grant is unbounded). The corrections are to **sizing/immediacy**, and they cut toward *less* immediate impact than a naive reading of the findings would suggest: Finding 2's live exposure is ~$22 (structural risk remains), and Finding 1's extraction is throttled by empty markets (structural/notional exposure of ~$30M remains). Finding 3's ~$2.3M is real, deliberate, and role‑gated. The verdict in §0 stands, now quantified.
+
+---
+
+## 12. Unprivileged risk (fork PoC) — the risk-control view
+
+The user asked, correctly, for the **unprivileged** exposure of each finding: what can an attacker with *no admin, no gated role, no privileged key* extract **at will, today**. A missing check that only bites when a *trusted party* or an *external event* acts is lower-urgency than one any anon can fire now. I stood up a real **ganache mainnet fork** (block 25,799,697; unprivileged test EOA `0xf39f…2266`; Tenderly-archive upstream via a local rate-limited JSON-RPC forwarder — the egress proxy blocks GitHub/foundry and rate-limits direct forks) and drove each finding from the attacker account. Script `audit/poc.py`, transcript `audit/data/POC_FORK_RESULTS.md`.
+
+| Finding | Unprivileged primitive attempted (on fork) | Result | **At risk, unprivileged, today** |
+|---|---|---|---|
+| **3 — credit line** | `_setCreditLimit(attacker,iUSDC,1e30)` | REVERT `admin or credit limit manager only` | **$0** — fully role-gated |
+| | `iLINK.borrow(1 LINK)` with $0 collateral | REVERT (`borrow cap` / would be `insufficient liquidity`) | uncollateralized borrow impossible |
+| **1 — oracle** | `oracle._setAggregators(…)` | REVERT `only the admin may set the aggregators` | **$0** — no unprivileged price-move primitive |
+| | supply 100 WETH → borrowing power `$198,214`; `borrow(100000 LINK)` | REVERT | borrow strictly bounded by `collateral·CF` (and by `borrowCaps`) |
+| **2 — poison DoS** | acquire iMIM cTokens (OTC) → `enterMarkets([iMIM])` → `getAccountLiquidity` | **REVERT `Feed not found`**; third-party `liquidateBorrow` → **REVERT `Feed not found`** | **$0 immediate** — self-poison works, but realizing bad debt needs an *external* price move |
+| **4 — backdoor** | (covered in §11/Finding 4) `borrowOnEvilSpellBehalf` | `require(msg.sender==IB_MULTISIG)` | **$0** — multisig-gated |
+
+**Conclusion for triage:** **no finding permits at-will unprivileged extraction in the current state.** Each is gated behind one of:
+- an **external trigger** the attacker cannot cause — a Chainlink feed degrading (Findings 1, and the *profit* leg of 2). Structural exposure is real and large ($30.3M single-sourced collateral; the DoS recurs at full scale on the next feed removal), but it is **not** attacker-fireable today.
+- a **privileged role** — `admin`/`creditLimitManager` (Finding 3), `IB_MULTISIG` (Finding 4). Misuse is out of scope as an attack; the reportable part is the *unbounded* power, not an open door.
+
+A note the fork surfaced: even the small "borrowable" liquidity I flagged in §11.3 is partly **not borrowable** right now — `iLINK` is at its `borrowCap`, so `borrow` reverts on the cap before any liquidity check. That throttles the *extraction* leg of Finding 1 even further toward $0 today.
+
+So, in the user's own risk-control terms: **fix all four, but none is a drop-everything "funds are leaving now" emergency from an unprivileged actor.** The urgency ordering is: (1) oracle staleness/liveness hardening — because the trigger (a feed dying) is a *when-not-if* external event that flips Findings 1+2 from $0 to large without any attacker skill; then (2) the centralization bounds (credit-limit cap/timelock, retire the iWETH/iWSTETH backdoor).
