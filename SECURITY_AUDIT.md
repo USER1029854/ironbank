@@ -4,7 +4,8 @@
 **Entry point handed to me:** Comptroller / Unitroller `0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB`
 **Scope of work:** find ways an attacker can take value or seize control they weren't entitled to; resolve, read and recover the full trust graph.
 **State snapshot:** chain block timestamp `1787265599` = **2026‑08‑20 22:39 UTC**.
-**Verification sources:** Etherscan V2 verified source (Solidity v0.5.17), on‑chain `eth_call` against live state, `getLogs` for mapping reconstruction, canonical Chainlink FeedRegistry.
+**Verification sources:** Etherscan V2 verified source (Solidity v0.5.17), on‑chain `eth_call` against live state (incl. `from`‑spoofed simulation), `getLogs` for mapping reconstruction, canonical Chainlink FeedRegistry.
+**Findings 1–3 were validated by live‑state simulation — see §11 for the PoC results, exposure sizing, and gating proofs. The headline numbers: ~$30.3M collateral single‑sourced by the oracle; ~$2.3M uncollateralized credit‑line debt outstanding; Finding 2's revert‑DoS is proven live (real accounts' `getAccountLiquidity` reverts) but its *current* non‑credit exposure is dust (~$22) — its weight is structural.**
 
 ---
 
@@ -161,7 +162,9 @@ function getPriceFromBAND(string memory symbol) internal view returns (uint256) 
 
 ---
 
-### Finding 2 — A reverting oracle for one listed market bricks the whole‑account liquidity computation → borrowers holding it become unliquidatable (MEDIUM; live precondition, bounded today by pause + market size, but structural)
+### Finding 2 — A reverting oracle for one listed market bricks the whole‑account liquidity computation → borrowers holding it become unliquidatable (MEDIUM structural; **proven live but current realized exposure ≈ $22** — see §11)
+
+> **Validation correction (§11):** the mechanism is confirmed on‑chain — three real accounts' `getAccountLiquidity` reverts "Feed not found" today, un‑gated. **But the only *non‑credit* accounts poisoned right now are two dust iMIM borrowers (~$8 and ~$14 collateral).** The one large poisoned account, `0xba5ebaf…` ($792k debt), is a **credit account** (`limit=1` markers on every major it borrows) and is therefore **already unliquidatable as a credit account regardless of iDPI** — its exposure belongs to Finding 3, not here. So Finding 2's live value‑at‑risk is ~$22; its severity is **structural** (it recurs at full size the moment any *un‑paused* market's feed is removed).
 
 **Code:** `audit/src/comptroller_impl_Comptroller/contracts__Comptroller.sol`, `getHypotheticalAccountLiquidityInternal`:
 
@@ -333,3 +336,43 @@ No unprivileged fund‑moving path with a missing or defeatable guard was found 
 - Live state: `audit/data/oracle_map.json` (source per asset), `audit/data/feed_staleness.json` (updatedAt/age), `audit/data/credit_limits.json` (191 events reconstructed), `audit/data/solvency2.json` (internalCash vs on‑chain), `audit/data/SUMMARY.md`.
 - Selector/topic derivation: `audit/keccak.py` (validated against known vectors).
 - Key live reverts: `oracle.getUnderlyingPrice(iMIM)` / `(iDPI)` → `execution reverted: Feed not found`; `reg.latestRoundData(MIM,USD)` → same.
+
+---
+
+## 11. Validation / PoC (live‑state simulation, un‑exaggerated sizing)
+
+I validated Findings 1–3 against **live mainnet state** via `eth_call` (including `from`‑spoofed calls, which the Etherscan V2 proxy honours) at the snapshot block. No local fork was needed — real accounts and real balances are stronger evidence than a synthetic fork. Raw results: `audit/data/VALIDATION.md`, `audit/data/credit_debt_usd.json`, `audit/data/poison_accounts.json`.
+
+### 11.1 Finding 2 — proven live, un‑gated; but current exposure is dust
+`comptroller.getAccountLiquidity(account)` on **real** accounts entered into the dead‑feed markets:
+
+| account | market | result |
+|---|---|---|
+| `0x6e868846…58e4` | iMIM borrower | **REVERT `execution reverted: Feed not found`** |
+| `0xdeb9553e…1574` | iMIM borrower | **REVERT `Feed not found`** |
+| `0xba5ebaf3…e54b` | iDPI borrower | **REVERT `Feed not found`** |
+| `0x6b41…c576` (control, not in dead mkts) | — | `err=0, shortfall=224,520` (succeeds) |
+| random EOA (control) | — | `err=0, 0, 0` (succeeds) |
+
+So the revert is real and nothing catches it — liquidation of these accounts is impossible (`liquidateBorrowAllowed → getAccountLiquidityInternal → revert`). **Sizing the honest way** (reconstructing each poisoned account across all 24 markets, since the protocol's own liquidity call can't): the two iMIM borrowers hold **$8 and $14** of collateral (dust). The third, `0xba5ebaf…`, carries **$792k** of debt with **$0** collateral — but it is a **credit account** on every major it borrows, so it is *already* exempt from liquidation (`liquidateBorrowAllowed` requires `!isCreditAccount`) independent of the iDPI poison; that debt is Finding‑3 credit exposure. **Finding 2's live value‑at‑risk ≈ $22.** Its severity is structural, not current: iMIM/iDPI are mint‑paused and tiny, but the identical condition regenerates at full scale the instant Chainlink removes any *un‑paused* market's feed (the FX markets are the likely next, and they hold the credit lines).
+
+### 11.2 Finding 3 — sized, and gating confirmed by simulation
+Total **uncollateralized credit‑line debt outstanding ≈ $2.30M** (from real `getAccountSnapshot` borrow balances × oracle price):
+
+| borrower | markets | debt |
+|---|---|---|
+| Fixed‑Forex `0x8338…`, `0x0a0b…`, `0x6b41…` | iEUR/iCHF/iKRW/iAUD/iGBP/iJPY (synths) | ≈ **$1.51M** (iEUR $745k, iCHF $276k, iKRW $221k, iAUD $208k, iGBP $34k, iJPY $26k) |
+| backstop `0xba5ebaf…` | WETH/USDC/DAI/USDT/WBTC | ≈ **$792k**, $0 collateral |
+
+Gating simulated live (from‑spoofed):
+- `borrowAllowed(iEUR, FixedForex, 1000e18)` → **returns 0 (ALLOWED)** although the borrower has **$0 collateral** → the credit branch skips the liquidity check exactly as read. **Confirmed.**
+- `_setCreditLimit(attacker, iUSDC, 1e30)` **from `creditLimitManager`** → **succeeds** (unbounded grant); **from a random address** → **REVERT `admin or credit limit manager only`**. → The power is real and unbounded, but **role‑gated** (not an unprivileged bug), matching the report.
+- Additional live bound: `borrowAllowed` enforces `borrowCap` *before* the credit branch (a 1e30 borrow reverts `market borrow cap reached`), so per‑market credit borrows are also capped by the (admin/guardian‑mutable) `borrowCaps`.
+
+### 11.3 Finding 1 — sized, with an honest throttle on *extraction*
+Total collateral valued by the single‑source oracle (from `totalCollateralTokens × exchangeRate × price`): **≈ $30.3M** (borrowing power ≈ $27.3M), dominated by **USDT/USD $20.4M** ($18.3M power), **DAI/USD $9.0M** ($8.1M), **USDC/USD $0.82M** — each priced by exactly one Chainlink feed with **no `updatedAt`/`answeredInRound`/deviation check** on any consuming path. That is the notional exposed to a single feed going stale or wrong.
+
+**Un‑exaggeration caveat on the *extraction* direction:** the large‑collateral stablecoin markets (iUSDT/iUSDC/iDAI) sit at **~100% utilization (`internalCash ≈ 0`)**, so an attacker who *over‑values* collateral via a stale feed still **cannot withdraw cash that isn't there**. Borrowable liquidity today is concentrated in the FX synth markets (~$3.5M equiv, themselves oracle‑exposed) and ~$59k of iLINK. So Finding 1's over‑borrow/bad‑debt path is **latent** — it needs *both* a feed to degrade *and* borrowable liquidity — whereas the **DoS/brick direction (Finding 2) needs no liquidity and is already live**. This is why I rate Finding 1 High on *structure/notional* while stating plainly that at‑will extraction today is throttled by the drained markets (itself a mutable condition — suppliers can re‑add liquidity at any time).
+
+### 11.4 Net effect of validation on the verdict
+Nothing was found to *gate* the mechanisms (no try/catch on the oracle revert; the credit path genuinely skips collateral; the manager grant is unbounded). The corrections are to **sizing/immediacy**, and they cut toward *less* immediate impact than a naive reading of the findings would suggest: Finding 2's live exposure is ~$22 (structural risk remains), and Finding 1's extraction is throttled by empty markets (structural/notional exposure of ~$30M remains). Finding 3's ~$2.3M is real, deliberate, and role‑gated. The verdict in §0 stands, now quantified.
